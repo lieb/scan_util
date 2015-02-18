@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
@@ -58,6 +59,10 @@ var (
 		"", "User comments")
 	photographer = getopt.StringLong("photographer", 'p',
 		def_foto, "Name of original photographer/artist")
+	create_jpeg = getopt.BoolLong("jpeg", 'J',
+		"Generate a jpeg format image file. Off by default")
+	show_progress = getopt.BoolLong("show-progress", 'v',
+		"Show a series of ...'s, one as each one is done")
 	optHelp = getopt.BoolLong("help", 'h', "Help")
 )
 
@@ -278,6 +283,67 @@ func set_exif_tags(file string, slide int) (err error) {
 	return nil
 }
 
+func make_jpeg(infile string) (err error) {
+
+	infilebase := strings.TrimSuffix(infile, ".dng")
+	exv_file := infilebase + ".exv"
+	tmp_file := infilebase + ".tmp"
+	jpeg_file := infilebase + ".jpeg"
+
+	// make a tmp file from the .dng
+
+	tmp_fh, err := os.Create(tmp_file)
+	if err != nil {
+		return nil
+	}
+	defer func () {
+		tmp_fh.Close()
+		os.Remove(tmp_file)
+	} ()
+	tmp_writer := bufio.NewWriter(tmp_fh)
+	cmd := exec.Command("dcraw", "-c", infile)
+	stdiopipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+
+	if err = cmd.Start(); err != nil {
+		log.Printf("dcraw -c of %s to %s failed", infile, tmp_file)
+		return err
+	}
+	io.Copy(tmp_writer, stdiopipe)
+	cmd.Wait()
+	tmp_writer.Flush()
+	tmp_fh.Close()
+
+	// get the EXIF bits from the .dng
+	cmd = exec.Command("exiv2", "ex", infile)
+
+	if err = cmd.Run(); err != nil {
+		log.Printf("exiv2 ex of %s failed", infile)
+		return err
+	}
+	defer os.Remove(exv_file)
+
+	// Now let's do what we came here for and make a JPEG...
+	cmd = exec.Command("convert", tmp_file, jpeg_file)
+
+	if err = cmd.Run(); err != nil {
+		log.Printf("convert of %s to %s failed", tmp_file, jpeg_file)
+		return err
+	}
+
+	// And add in the EXIF bits from the source
+	cmd = exec.Command("exiv2", "in", jpeg_file)
+
+	if err = cmd.Run(); err != nil {
+		log.Printf("exiv2 in of %s failed", jpeg_file)
+		os.Remove(jpeg_file) // all that work for nothing...
+		return err
+	}
+	return nil
+}
+
 func do_work() {
 	var job Image_job
 	var a_job bool
@@ -300,6 +366,16 @@ func do_work() {
 			log.Printf("Failed to set tags in file %s", dest_file)
 			break
 		}
+		if *create_jpeg {
+			if err = make_jpeg(dest_file); err != nil {
+				log.Printf("Failed to generate JPEG file for %s",
+					dest_file)
+				break
+			}
+		}
+		if *show_progress {
+			fmt.Printf(".")
+		}
 	}
 }
 
@@ -309,11 +385,11 @@ func main() {
 	var mon time.Month
 
 	getopt.Parse()
-	if *optHelp {
+	if len(os.Args) < 2 || *optHelp {
 		getopt.Usage()
 		os.Exit(0)
 	}
-	
+
 	this_year = fmt.Sprintf("%4d",now_time.Year())
 	batch_time, e := time.Parse("Jan-2006", *orig_date)
 	if e != nil {
