@@ -4,8 +4,6 @@
 package main
 
 import (
-	"bytes"
-	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
@@ -229,7 +227,6 @@ func write_cmd(tf *os.File, cmd exiv2_cmd, tag_val string) (err error) {
 }
 
 func set_exif_tags(file string, slide int) (err error) {
-	var out bytes.Buffer
 	var tf *os.File
 	tagcmds := file + ".cmds"
 
@@ -271,14 +268,9 @@ func set_exif_tags(file string, slide int) (err error) {
 		}
 	}
 
-	cmd := exec.Command("exiv2", "-m", tagcmds, file)
-	cmd.Stdout = &out
-
-	if err = cmd.Run(); err != nil {
+	exiv2 := exec.Command("exiv2", "-m", tagcmds, file)
+	if err = exiv2.Run(); err != nil {
 		return err
-	}
-	if len(out.String()) > 0 {
-		log.Printf("output from exiv2: %s", out.String())
 	}
 	return nil
 }
@@ -287,58 +279,49 @@ func make_jpeg(infile string) (err error) {
 
 	infilebase := strings.TrimSuffix(infile, ".dng")
 	exv_file := infilebase + ".exv"
-	tmp_file := infilebase + ".tmp"
 	jpeg_file := infilebase + ".jpeg"
 
-	// make a tmp file from the .dng
-
-	tmp_fh, err := os.Create(tmp_file)
+	// dcraw -c infile | convert - jpeg_file
+	dcraw := exec.Command("dcraw", "-c", infile)
+	convert := exec.Command("convert", "-", jpeg_file)
+	convert.Stdin, err = dcraw.StdoutPipe()
 	if err != nil {
-		return nil
+		return err
+	}
+
+	if err = convert.Start(); err != nil {
+		log.Printf("Start of convert to %s failed", jpeg_file)
+		return err
 	}
 	defer func () {
-		tmp_fh.Close()
-		os.Remove(tmp_file)
+		if err != nil {
+			os.Remove(jpeg_file)
+		}
 	} ()
-	tmp_writer := bufio.NewWriter(tmp_fh)
-	cmd := exec.Command("dcraw", "-c", infile)
-	stdiopipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
 
-	if err = cmd.Start(); err != nil {
-		log.Printf("dcraw -c of %s to %s failed", infile, tmp_file)
+	if err = dcraw.Run(); err != nil {
+		log.Printf("Run of dcraw of %s failed", infile)
 		return err
 	}
-	io.Copy(tmp_writer, stdiopipe)
-	cmd.Wait()
-	tmp_writer.Flush()
-	tmp_fh.Close()
+	if err = convert.Wait(); err != nil {
+		log.Printf("Convert of %s failed", jpeg_file)
+		return err
+	}
 
 	// get the EXIF bits from the .dng
-	cmd = exec.Command("exiv2", "ex", infile)
+	exiv2 := exec.Command("exiv2", "ex", infile)
 
-	if err = cmd.Run(); err != nil {
+	if err = exiv2.Run(); err != nil {
 		log.Printf("exiv2 ex of %s failed", infile)
 		return err
 	}
 	defer os.Remove(exv_file)
 
-	// Now let's do what we came here for and make a JPEG...
-	cmd = exec.Command("convert", tmp_file, jpeg_file)
-
-	if err = cmd.Run(); err != nil {
-		log.Printf("convert of %s to %s failed", tmp_file, jpeg_file)
-		return err
-	}
-
 	// And add in the EXIF bits from the source
-	cmd = exec.Command("exiv2", "in", jpeg_file)
+	exiv2 = exec.Command("exiv2", "in", jpeg_file)
 
-	if err = cmd.Run(); err != nil {
+	if err = exiv2.Run(); err != nil {
 		log.Printf("exiv2 in of %s failed", jpeg_file)
-		os.Remove(jpeg_file) // all that work for nothing...
 		return err
 	}
 	return nil
@@ -362,6 +345,11 @@ func do_work() {
 			log.Printf("Failed to copy file %s", job.src)
 			break
 		}
+		defer func () {
+			if err != nil {
+				os.Remove(dest_file)
+			}
+		} ()
 		if err = set_exif_tags(dest_file, job.slide); err != nil {
 			log.Printf("Failed to set tags in file %s", dest_file)
 			break
