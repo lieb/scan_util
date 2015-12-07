@@ -10,6 +10,7 @@ import (
 	"io"
 	"errors"
 	"strings"
+	"path"
 	"strconv"
 	"time"
 	"sort"
@@ -228,7 +229,7 @@ func write_cmd(tf *os.File, cmd exiv2_cmd, tag_val string) (err error) {
 
 func set_exif_tags(file string, slide int) (err error) {
 	var tf *os.File
-	tagcmds := file + ".cmds"
+	tagcmds := "/tmp/" + strings.TrimSuffix(path.Base(file), ".dng") + ".cmds"
 
 	if tf, err = os.Create(tagcmds); err != nil {
 		return err
@@ -290,7 +291,8 @@ func make_jpeg(infile string) (err error) {
 	}
 
 	if err = convert.Start(); err != nil {
-		log.Printf("Start of convert to %s failed", jpeg_file)
+		log.Printf("Start of convert to %s failed because %s",
+			jpeg_file, err.Error())
 		return err
 	}
 	defer func () {
@@ -300,11 +302,13 @@ func make_jpeg(infile string) (err error) {
 	} ()
 
 	if err = dcraw.Run(); err != nil {
-		log.Printf("Run of dcraw of %s failed", infile)
+		log.Printf("Run of dcraw of %s failed because %s",
+			infile, err.Error())
 		return err
 	}
 	if err = convert.Wait(); err != nil {
-		log.Printf("Convert of %s failed", jpeg_file)
+		log.Printf("Convert of %s failed because %s",
+			jpeg_file, err.Error())
 		return err
 	}
 
@@ -312,7 +316,8 @@ func make_jpeg(infile string) (err error) {
 	exiv2 := exec.Command("exiv2", "ex", infile)
 
 	if err = exiv2.Run(); err != nil {
-		log.Printf("exiv2 ex of %s failed", infile)
+		log.Printf("exiv2 ex of %s failed because %s",
+			infile, err.Error())
 		return err
 	}
 	defer os.Remove(exv_file)
@@ -321,7 +326,8 @@ func make_jpeg(infile string) (err error) {
 	exiv2 = exec.Command("exiv2", "in", jpeg_file)
 
 	if err = exiv2.Run(); err != nil {
-		log.Printf("exiv2 in of %s failed", jpeg_file)
+		log.Printf("exiv2 in of %s failed because %s",
+			jpeg_file, err.Error())
 		return err
 	}
 	return nil
@@ -351,7 +357,8 @@ func do_work() {
 			}
 		} ()
 		if err = set_exif_tags(dest_file, job.slide); err != nil {
-			log.Printf("Failed to set tags in file %s", dest_file)
+			log.Printf("Failed to set tags in file %s because %s",
+				dest_file, err.Error())
 			break
 		}
 		if *create_jpeg {
