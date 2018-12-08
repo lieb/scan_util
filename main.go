@@ -1,22 +1,29 @@
 /*
+scan_util is a program for managing the process of moving accumulated image
+files created by a photo/film scanner to a gallery.
+
+Copyright 2018 Jim Lieb <lieb@sea-troll.net>
+
+This software is licensed under the terms of the GNU Public License V3 or later
+See the LICENSE file this repository or at https://fsf.org for details.
 */
 
 package main
 
 import (
+	"code.google.com/p/getopt"
+	"errors"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"os/exec"
-	"io"
-	"errors"
-	"strings"
 	"path"
-	"strconv"
-	"time"
-	"sort"
-	"log"
 	"runtime"
-	"code.google.com/p/getopt"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
 )
 
 const (
@@ -33,9 +40,9 @@ var (
 
 // Command line options and args
 var (
-	def_date = time.Now().Format("Jan-2006")
-	def_foto = "James Lieb"
-	scan_types = []string {"TR", "CN", "BW"}
+	def_date   = time.Now().Format("Jan-2006")
+	def_foto   = "James Lieb"
+	scan_types = []string{"TR", "CN", "BW"}
 
 	src_dir = getopt.StringLong("src_dir", 'i',
 		".", "Source directory")
@@ -45,7 +52,7 @@ var (
 		def_date, "Original processing date as 'mon-year' or 'mon day, year'")
 	film_type = getopt.EnumLong("film_type", 'T',
 		scan_types,
-		"Film type: TR = slide, CN = color neg, BW = B/W neg");
+		"Film type: TR = slide, CN = color neg, BW = B/W neg")
 	batch = getopt.IntLong("batch", 'b',
 		1, "Processing box or batch number")
 	file_suffix = getopt.StringLong("suffix", 'S',
@@ -74,25 +81,25 @@ type exiv2_cmd struct {
 // Contents of the exiv2 command file
 
 var (
-	copyright_fmt = exiv2_cmd {
+	copyright_fmt = exiv2_cmd{
 		"Exif.Image.Copyright",
 		"Ascii",
 		"Copyright %s, %s. All rights reserved"}
-	artist_fmt = exiv2_cmd {
+	artist_fmt = exiv2_cmd{
 		"Exif.Image.Artist",
-		"Ascii",  "%s"}
-	origdate_fmt = exiv2_cmd {
+		"Ascii", "%s"}
+	origdate_fmt = exiv2_cmd{
 		"Exif.Photo.DateTimeOriginal",
 		"Ascii", "%4d:%02d:%02d 00:00:00"}
-	desc_fmt = exiv2_cmd {
+	desc_fmt = exiv2_cmd{
 		"Exif.Image.ImageDescription",
 		"Ascii",
 		"%s"}
-	docname_fmt = exiv2_cmd {
+	docname_fmt = exiv2_cmd{
 		"Exif.Image.DocumentName",
 		"Ascii",
 		"Processed date %d-%02d-%02d, batch %d, slide %d"}
-	usercomment_fmt = exiv2_cmd {
+	usercomment_fmt = exiv2_cmd{
 		"Exif.Photo.UserComment",
 		"comment charset=Ascii",
 		"%s"}
@@ -101,8 +108,8 @@ var (
 // The work pipeline
 
 type Image_job struct {
-	src string	// path to source image file
-	dest string
+	src   string // path to source image file
+	dest  string
 	slide int
 }
 
@@ -153,8 +160,8 @@ func scandir(dirname, suffix string) (file_list []string, err error) {
 	for _, file := range files {
 		if !file.Mode().IsRegular() ||
 			!strings.HasSuffix(strings.ToLower(file.Name()),
-			"." + suffix) {
-			continue;
+				"."+suffix) {
+			continue
 		}
 		name := dirname + Ps + file.Name()
 		file_list = append(file_list, name)
@@ -163,11 +170,11 @@ func scandir(dirname, suffix string) (file_list []string, err error) {
 	return file_list, nil
 }
 
-func args2slides (args []string) []int {
+func args2slides(args []string) []int {
 	var sl []int
 
 	for i := 0; i < len(args); i++ {
-		toks := strings.Split(args[i], "-");
+		toks := strings.Split(args[i], "-")
 		if len(toks) == 1 {
 			slide, e := strconv.ParseInt(toks[0], 10, 0)
 			if e != nil {
@@ -295,11 +302,11 @@ func make_jpeg(infile string) (err error) {
 			jpeg_file, err.Error())
 		return err
 	}
-	defer func () {
+	defer func() {
 		if err != nil {
 			os.Remove(jpeg_file)
 		}
-	} ()
+	}()
 
 	if err = dcraw.Run(); err != nil {
 		log.Printf("Run of dcraw of %s failed because %s",
@@ -351,11 +358,11 @@ func do_work() {
 			log.Printf("Failed to copy file %s", job.src)
 			break
 		}
-		defer func () {
+		defer func() {
 			if err != nil {
 				os.Remove(dest_file)
 			}
-		} ()
+		}()
 		if err = set_exif_tags(dest_file, job.slide); err != nil {
 			log.Printf("Failed to set tags in file %s because %s",
 				dest_file, err.Error())
@@ -385,7 +392,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	this_year = fmt.Sprintf("%4d",now_time.Year())
+	this_year = fmt.Sprintf("%4d", now_time.Year())
 	batch_time, e := time.Parse("Jan-2006", *orig_date)
 	if e != nil {
 		batch_time, e = time.Parse("Jan 2, 2006", *orig_date)
