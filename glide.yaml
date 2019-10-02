@@ -1,3 +1,0 @@
-package: github.com/lieb/scan_util
-import:
-- package: code.google.com/p/getopt
