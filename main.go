@@ -11,9 +11,9 @@ See the LICENSE file this repository or at https://fsf.org for details.
 package main
 
 import (
-	"code.google.com/p/getopt"
 	"errors"
 	"fmt"
+	"github.com/pborman/getopt"
 	"io"
 	"log"
 	"os"
